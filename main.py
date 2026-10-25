@@ -6,53 +6,48 @@ import pyppeteer
 import asyncio
 import pytz
 
-# Kanalları buraya ekleyin
-channels = [1546966686035349508] 
+channels = [1546966686035349508]
 token = os.getenv("TOKEN")
 
 locale_to_timezone = {
-    discord.Locale.american_english: 'America/New_York',        # en-US
-    discord.Locale.british_english: 'Europe/London',            # en-GB
-    discord.Locale.bulgarian: 'Europe/Sofia',                   # bg
-    discord.Locale.chinese: 'Asia/Shanghai',                    # zh-CN
-    discord.Locale.taiwan_chinese: 'Asia/Taipei',               # zh-TW
-    discord.Locale.croatian: 'Europe/Zagreb',                   # hr
-    discord.Locale.czech: 'Europe/Prague',                      # cs
-    discord.Locale.indonesian: 'Asia/Jakarta',                  # id
-    discord.Locale.danish: 'Europe/Copenhagen',                 # da
-    discord.Locale.dutch: 'Europe/Amsterdam',                   # nl
-    discord.Locale.finnish: 'Europe/Helsinki',                  # fi
-    discord.Locale.french: 'Europe/Paris',                      # fr
-    discord.Locale.german: 'Europe/Berlin',                     # de
-    discord.Locale.greek: 'Europe/Athens',                      # el
-    discord.Locale.hindi: 'Asia/Kolkata',                       # hi
-    discord.Locale.hungarian: 'Europe/Budapest',                # hu
-    discord.Locale.italian: 'Europe/Rome',                      # it
-    discord.Locale.japanese: 'Asia/Tokyo',                      # ja
-    discord.Locale.korean: 'Asia/Seoul',                        # ko
-    discord.Locale.latin_american_spanish: 'America/Mexico_City', # es-419
-    discord.Locale.lithuanian: 'Europe/Vilnius',                # lt
-    discord.Locale.norwegian: 'Europe/Oslo',                    # no
-    discord.Locale.polish: 'Europe/Warsaw',                     # pl
-    discord.Locale.brazil_portuguese: 'America/Sao_Paulo',      # pt-BR
-    discord.Locale.romanian: 'Europe/Bucharest',                # ro
-    discord.Locale.russian: 'Europe/Moscow',                    # ru
-    discord.Locale.spain_spanish: 'Europe/Madrid',              # es-ES
-    discord.Locale.swedish: 'Europe/Stockholm',                 # sv-SE
-    discord.Locale.thai: 'Asia/Bangkok',                        # th
-    discord.Locale.turkish: 'Europe/Istanbul',                  # tr
-    discord.Locale.ukrainian: 'Europe/Kyiv',                    # uk
-    discord.Locale.vietnamese: 'Asia/Ho_Chi_Minh',              # vi
+    discord.Locale.american_english: 'America/New_York',
+    discord.Locale.british_english: 'Europe/London',
+    discord.Locale.bulgarian: 'Europe/Sofia',
+    discord.Locale.chinese: 'Asia/Shanghai',
+    discord.Locale.taiwan_chinese: 'Asia/Taipei',
+    discord.Locale.croatian: 'Europe/Zagreb',
+    discord.Locale.czech: 'Europe/Prague',
+    discord.Locale.indonesian: 'Asia/Jakarta',
+    discord.Locale.danish: 'Europe/Copenhagen',
+    discord.Locale.dutch: 'Europe/Amsterdam',
+    discord.Locale.finnish: 'Europe/Helsinki',
+    discord.Locale.french: 'Europe/Paris',
+    discord.Locale.german: 'Europe/Berlin',
+    discord.Locale.greek: 'Europe/Athens',
+    discord.Locale.hindi: 'Asia/Kolkata',
+    discord.Locale.hungarian: 'Europe/Budapest',
+    discord.Locale.italian: 'Europe/Rome',
+    discord.Locale.japanese: 'Asia/Tokyo',
+    discord.Locale.korean: 'Asia/Seoul',
+    discord.Locale.latin_american_spanish: 'America/Mexico_City',
+    discord.Locale.lithuanian: 'Europe/Vilnius',
+    discord.Locale.norwegian: 'Europe/Oslo',
+    discord.Locale.polish: 'Europe/Warsaw',
+    discord.Locale.brazil_portuguese: 'America/Sao_Paulo',
+    discord.Locale.romanian: 'Europe/Bucharest',
+    discord.Locale.russian: 'Europe/Moscow',
+    discord.Locale.spain_spanish: 'Europe/Madrid',
+    discord.Locale.swedish: 'Europe/Stockholm',
+    discord.Locale.thai: 'Asia/Bangkok',
+    discord.Locale.turkish: 'Europe/Istanbul',
+    discord.Locale.ukrainian: 'Europe/Kyiv',
+    discord.Locale.vietnamese: 'Asia/Ho_Chi_Minh',
 }
 
 def get_current_time_in_locale(interaction: discord.Interaction):
-    user_locale = interaction.locale  # Get the user's locale
-    timezone_str = locale_to_timezone.get(user_locale, 'UTC')  # Default to UTC if locale not found
-    try:
-        timezone = pytz.timezone(timezone_str)
-    except Exception:
-        timezone = pytz.UTC
-    # Get the current time in the specified timezone
+    user_locale = interaction.locale
+    timezone_str = locale_to_timezone.get(user_locale, 'UTC')
+    timezone = pytz.timezone(timezone_str)
     current_time = datetime.datetime.now(timezone)
     return current_time
 
@@ -61,7 +56,6 @@ def generate_time_range(interaction):
     random_minutes = random.randint(2, 7)
     new_time = current_time + datetime.timedelta(minutes=random_minutes)
     
-    # Adjust if the new time minute exceeds 59 (Handled by timedelta automatically usually, but keeping logic safe)
     if new_time.minute > 59:
         new_time = new_time.replace(hour=new_time.hour + 1, minute=new_time.minute % 60)
         
@@ -77,9 +71,7 @@ class Client(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        GUILD_ID = 1540307848683061368  # Replace with your guild ID
-        guild = discord.Object(id=GUILD_ID)
-        await self.tree.sync(guild=guild)
+        await self.tree.sync()
 
     async def on_ready(self):
         await self.change_presence(activity=discord.Game(name="Use /proof to see the commands"))
@@ -98,7 +90,6 @@ class NitroPage:
     def __init__(self, gifter_username, receiver_username, gifter_message, receiver_message, gifter_avatar_url, receiver_avatar_url, timestamp_1, timestamp_2, full_date, claimed):
         self.actual_datetime = datetime.datetime.now()
         self.proof = ""
-        # Basit sanitizasyon
         self.gifter_username = str(gifter_username).replace('<', '').replace('>', '').replace('script', '')
         self.receiver_username = str(receiver_username).replace('<', '').replace('>', '').replace('script', '')
         self.gifter_message = str(gifter_message).replace('<', '').replace('>', '').replace('script', '')
@@ -113,7 +104,6 @@ class NitroPage:
         self.claimed = claimed
 
     def get_proof(self):
-        # Dosya yollarının assets klasöründe olduğundan emin olun
         if self.claimed == True:
             filename = "assets/nitroproof.html"
         else:
@@ -174,7 +164,6 @@ class NitroModal(discord.ui.Modal, title='Nitro proof generator'):
         try:
             await interaction.response.defer(ephemeral=False, thinking=True) 
             
-            # Type Check
             is_claimed = False
             if self.nitro_type.value and self.nitro_type.value.lower() == "claimed":
                 is_claimed = True
@@ -228,8 +217,7 @@ class NitroModal(discord.ui.Modal, title='Nitro proof generator'):
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
                 
-            # CHROME FIX: executablePath kaldırıldı, pyppeteer otomatik yönetecek
-            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox']) 
+            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox'])
             page = await browser.newPage()
             await page.setViewport({'width': 1300, 'height': 500})
             absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
@@ -248,8 +236,6 @@ class NitroModal(discord.ui.Modal, title='Nitro proof generator'):
             await browser.close()
             
             embed = discord.Embed(color=0x717CDA, title="Success", description=f"> **Please check your DMs!** {self.note if self.note else ''}")
-            # Görsel URL si uzun, kısalmış haliyle bırakıyorum veya placeholder koyabilirsiniz. 
-            # Not: Cloudconvert linkleri sürelidir, kendi hosting'inize görsel yüklemeniz önerilir.
             embed.set_image(url="https://media.discordapp.net/attachments/1256873254153355326/1256873302421606451/Pekkle_Image.png?ex=6683f0d0&is=66829f50&hm=example_hash&=&format=webp&quality=lossless&width=400&height=400")
             embed.set_footer(text="PekkleDev")
             
