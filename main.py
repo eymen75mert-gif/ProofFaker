@@ -77,7 +77,7 @@ class Client(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        GUILD_ID = 1293281234037772420  # Replace with your guild ID
+        GUILD_ID = 1540307848683061368  # Replace with your guild ID
         guild = discord.Object(id=GUILD_ID)
         await self.tree.sync(guild=guild)
 
