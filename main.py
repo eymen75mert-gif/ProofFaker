@@ -200,7 +200,10 @@ class NitroModal(discord.ui.Modal, title='Nitro proof generator'):
             proof = NitroPage(self.gifter_globalname, self.receiver_globalname, self.gifter_message, self.receiver_message, self.gifter_avatar, self.receiver_avatar, self.timestamp_1, self.timestamp_2, self.full_date, self.nitroclaimed).get_proof()
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
-            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+            browser = await pyppeteer.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
+            )
             page = await browser.newPage()
             await page.setViewport({'width': 1300, 'height': 500})
             absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
@@ -327,7 +330,10 @@ class RobuxModal(discord.ui.Modal, title='Robux proof generator'):
             proof = RobuxPage(self.gifter_globalname, self.receiver_globalname, self.receiver_message, self.gifter_avatar, self.receiver_avatar, self.timestamp_1, self.timestamp_2, self.full_date).get_proof()
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
-            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+            browser = await pyppeteer.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
+            )
             page = await browser.newPage()
             await page.setViewport({'width': 1300, 'height': 500})
             absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
@@ -456,7 +462,10 @@ class MinecraftModal(discord.ui.Modal, title='Minecraft proof generator'):
             proof = MinecraftPage(self.gifter_globalname, self.receiver_globalname, self.receiver_message, self.gifter_avatar, self.receiver_avatar, self.timestamp_1, self.timestamp_2, self.full_date).get_proof()
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
-            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+            browser = await pyppeteer.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
+            )
             page = await browser.newPage()
             await page.setViewport({'width': 1300, 'height': 500})
             absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
@@ -550,7 +559,10 @@ class BoostsModal(discord.ui.Modal, title='14x Boosts proof generator'):
             proof = BoostsPage(self.channelname, self.gifter_globalname, self.timestamp_1, self.full_date).get_proof()
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
-            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+            browser = await pyppeteer.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
+            )
             page = await browser.newPage()
             await page.setViewport({'width': 1350, 'height': 700})
             absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
@@ -640,7 +652,10 @@ class InventoryModal(discord.ui.Modal, title='Inventory proof generator'):
             proof = InventoryPage(self.gifter_globalname, self.nitro_amount.value, self.basic_amount.value).get_proof()
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
-            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+            browser = await pyppeteer.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
+            )
             page = await browser.newPage()
             await page.setViewport({'width': 1350, 'height': 1100})
             absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
@@ -717,7 +732,10 @@ class PaypalModal(discord.ui.Modal, title='Paypal transaction proof generator'):
             proof = PaypalPage(self.nitro_amount.value, self.gifter.value).get_proof()
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
-            browser = await pyppeteer.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+            browser = await pyppeteer.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
+            )
             page = await browser.newPage()
             absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
             await page.setViewport({'width': 1280, 'height': 1024})
