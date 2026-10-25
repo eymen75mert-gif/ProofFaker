@@ -8,6 +8,9 @@ from discord.ext import commands
 
 TOKEN = os.getenv("TOKEN")
 
+# /proof mesajının gönderileceği kanal ID'sini buraya yaz
+PROOF_CHANNEL_ID = 1563982186011435232
+
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -21,10 +24,7 @@ def generate_code():
     return "NITRO-" + "-".join(parts)
 
 
-@bot.tree.command(
-    name="nitro",
-    description="Tür ve süre seçerek kod oluştur."
-)
+@bot.tree.command(name="nitro", description="Nitro kodu oluştur.")
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.choices(
@@ -46,31 +46,17 @@ async def nitro(
 
     embed = discord.Embed(
         title="🎁 Nitro Kod",
-        color=discord.Color.blurple()
+        color=discord.Color.gold()
     )
-
-    embed.add_field(
-        name="Tür",
-        value=tur.value,
-        inline=True
-    )
-    embed.add_field(
-        name="Süre",
-        value=sure.value,
-        inline=True
-    )
-    embed.add_field(
-        name="Kod",
-        value=f"```{code}```",
-        inline=False
-    )
+    embed.add_field(name="Tür", value=tur.value, inline=True)
+    embed.add_field(name="Süre", value=sure.value, inline=True)
+    embed.add_field(name="Kod", value=f"```{code}```", inline=False)
     embed.add_field(
         name="📌 Nasıl kullanılır?",
         value=(
-            "1. Discord'u aç.\n"
-            "2. Kullanıcı Ayarları'na gir.\n"
-            "3. Hediye Envanteri / Redeem Code bölümünü aç.\n"
-            "4. Kodunu gir ve onayla."
+            "1. Discord Kullanıcı Ayarları'nı aç.\n"
+            "2. Hediye Envanteri veya kod kullanma bölümüne gir.\n"
+            "3. Geçerli hediye kodunu gir."
         ),
         inline=False
     )
@@ -78,8 +64,71 @@ async def nitro(
     await interaction.response.send_message(embed=embed)
 
 
+@bot.tree.command(
+    name="proof",
+    description="Ödül kazanım görselini belirlenen kanala gönder."
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(gorsel_url="Gönderilecek görselin URL'si")
+async def proof(
+    interaction: discord.Interaction,
+    gorsel_url: str
+):
+    # Yalnızca HTTP/HTTPS görsel bağlantılarına izin ver
+    if not gorsel_url.startswith(("https://", "http://")):
+        await interaction.response.send_message(
+            "Lütfen geçerli bir HTTPS görsel URL'si gir.",
+            ephemeral=True
+        )
+        return
+
+    channel = bot.get_channel(PROOF_CHANNEL_ID)
+
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(PROOF_CHANNEL_ID)
+        except discord.HTTPException:
+            await interaction.response.send_message(
+                "Belirlenen kanal bulunamadı. Kanal ID'sini kontrol et.",
+                ephemeral=True
+            )
+            return
+
+    embed = discord.Embed(
+        title="🏆・ÖDÜL KAZANILDI!",
+        description=(
+            "✨ Tebrikler!\n\n"
+            "Bir kullanıcı davet yaparak ödül kazandı!\n"
+            "🎉 Katılımın ve desteğin için teşekkür ederiz.\n\n"
+            "💛 Yeni ödüller için bizi takip etmeye devam et!"
+        ),
+        color=discord.Color.gold()
+    )
+    embed.set_image(url=gorsel_url)
+    embed.set_footer(text="Ödül Sistemi • Başarılar dileriz!")
+
+    try:
+        await channel.send(embed=embed)
+    except discord.HTTPException:
+        await interaction.response.send_message(
+            "Mesaj gönderilemedi. Botun kanal izinlerini ve görsel URL'sini kontrol et.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        f"✅ Ödül mesajı <#{PROOF_CHANNEL_ID}> kanalına gönderildi.",
+        ephemeral=True
+    )
+
+
 @nitro.error
-async def nitro_error(interaction, error):
+@proof.error
+async def command_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
     if isinstance(error, app_commands.MissingPermissions):
         message = "❌ Bu komutu yalnızca yöneticiler kullanabilir."
     else:
@@ -94,7 +143,7 @@ async def nitro_error(interaction, error):
 
 
 if not TOKEN:
-    raise RuntimeError("DISCORD_BOT_TOKEN ayarlanmamış!")
+    raise RuntimeError("DISCORD_BOT_TOKEN ortam değişkeni ayarlanmamış!")
 
 
 @bot.event
