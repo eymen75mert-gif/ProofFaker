@@ -1,14 +1,21 @@
 import discord
 from discord import app_commands
-from discord.ui import View, Select
-import datetime, random, traceback, os
+import datetime
+import random
+import traceback
+import os
 import pyppeteer
-import asyncio
 import pytz
 
+# ============================================================
+# AYARLAR
+# ============================================================
 channels = [1546966686035349508]
 token = os.getenv("TOKEN")
 
+# ============================================================
+# ZAMAN DİLİMİ
+# ============================================================
 locale_to_timezone = {
     discord.Locale.american_english: 'America/New_York',
     discord.Locale.british_english: 'Europe/London',
@@ -48,8 +55,7 @@ def get_current_time_in_locale(interaction: discord.Interaction):
     user_locale = interaction.locale
     timezone_str = locale_to_timezone.get(user_locale, 'UTC')
     timezone = pytz.timezone(timezone_str)
-    current_time = datetime.datetime.now(timezone)
-    return current_time
+    return datetime.datetime.now(timezone)
 
 def generate_time_range(interaction):
     current_time = get_current_time_in_locale(interaction)
@@ -62,17 +68,41 @@ def generate_time_range(interaction):
     original_time_format = current_time.strftime("%d %B %Y")
     return current_time_format, new_time_format, original_time_format
 
+# ============================================================
+# CHROME BAŞLATMA (LINUX UYUMLU)
+# ============================================================
+async def launch_browser():
+    """Linux/Railway uyumlu Chrome başlatma"""
+    executable_path = os.getenv("PUPPETEER_EXECUTABLE_PATH", "/usr/bin/chromium")
+    return await pyppeteer.launch(
+        executablePath=executable_path,
+        headless=True,
+        args=[
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--single-process',
+        ]
+    )
+
+# ============================================================
+# BOT CLIENT
+# ============================================================
 class Client(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.all())
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
+        # GLOBAL SYNC - Guild ID yok, tüm sunucularda çalışır
         await self.tree.sync()
+        print("✅ Komutlar global olarak senkronize edildi!")
 
     async def on_ready(self):
         await self.change_presence(activity=discord.Game(name="Use /proof to see the commands"))
-        print(f"{self.user} ({self.user.id}) is ready!")
+        print(f"✅ {self.user} ({self.user.id}) hazır!")
 
 client = Client()
 
@@ -83,44 +113,93 @@ async def on_message(message):
     if message.content.startswith(client.user.mention):
         await message.channel.send(f"{message.author.mention} Please use /proof command.")
 
+# ============================================================
+# YARDIMCI FONKSİYONLAR
+# ============================================================
+def sanitize(text):
+    if text is None:
+        return ""
+    return str(text).replace('<', '').replace('>', '').replace('script', '')
+
+def get_user_name(user):
+    if user.global_name:
+        return user.global_name
+    return user.name
+
+def get_user_avatar(user):
+    if user.avatar:
+        return user.avatar.url
+    return user.default_avatar.url
+
+async def take_screenshot(html_content, clip_x, clip_y, clip_w, clip_h, width=1300, height=500):
+    """HTML'den ekran görüntüsü al"""
+    with open("assets/temp.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
+    
+    browser = await launch_browser()
+    page = await browser.newPage()
+    await page.setViewport({'width': width, 'height': height})
+    absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
+    await page.goto(absolute_path, waitUntil='networkidle0')
+    
+    await page.screenshot({
+        'path': 'proof.png',
+        'clip': {
+            'x': clip_x,
+            'y': clip_y,
+            'width': clip_w,
+            'height': clip_h
+        }
+    })
+    await browser.close()
+
+def send_error_embed(interaction, error_msg="Oops! Something went wrong."):
+    embed = discord.Embed(color=0xFF0000, title="Error", description=f"> **{error_msg}**")
+    embed.set_footer(text="PekkleDev")
+    return embed
+
+def send_success_embed(interaction, note=""):
+    embed = discord.Embed(color=0x717CDA, title="Success", description=f"> **Please check your DMs!** {note}")
+    embed.set_footer(text="PekkleDev")
+    return embed
+
+# ============================================================
+# NITRO PROOF
+# ============================================================
 class NitroPage:
-    def __init__(self, gifter_username, receiver_username, gifter_message, receiver_message, gifter_avatar_url, receiver_avatar_url, timestamp_1, timestamp_2, full_date, claimed):
-        self.actual_datetime = datetime.datetime.now()
-        self.proof = ""
-        self.gifter_username = str(gifter_username).replace('<', '').replace('>', '').replace('script', '')
-        self.receiver_username = str(receiver_username).replace('<', '').replace('>', '').replace('script', '')
-        self.gifter_message = str(gifter_message).replace('<', '').replace('>', '').replace('script', '')
-        self.receiver_message = str(receiver_message).replace('<', '').replace('>', '').replace('script', '')
+    def __init__(self, gifter_username, receiver_username, gifter_message, receiver_message,
+                 gifter_avatar_url, receiver_avatar_url, timestamp_1, timestamp_2, full_date, claimed):
+        self.gifter_username = sanitize(gifter_username)
+        self.receiver_username = sanitize(receiver_username)
+        self.gifter_message = sanitize(gifter_message)
+        self.receiver_message = sanitize(receiver_message)
         self.gifter_avatar_url = gifter_avatar_url
         self.receiver_avatar_url = receiver_avatar_url
         self.timestamp_1 = timestamp_1
         self.timestamp_2 = timestamp_2
-        self.full_date = full_date
-        if self.full_date.startswith('0'):
-            self.full_date = self.full_date.replace('0', '', 1)
+        self.full_date = full_date.lstrip('0') if full_date.startswith('0') else full_date
         self.claimed = claimed
 
     def get_proof(self):
-        if self.claimed == True:
+        if self.claimed:
             filename = "assets/nitroproof.html"
         else:
             filename = "assets/nitroproofclaimed.html"
-        try:
-            with open(filename, 'r', encoding="utf-8") as file:
-                self.html_content = file.read()
-                self.html_content = self.html_content.replace('GIFTER_USERNAME', self.gifter_username)
-                self.html_content = self.html_content.replace('RECEIVER_USERNAME', self.receiver_username)
-                self.html_content = self.html_content.replace('GIFTER_MESSAGE', self.gifter_message + '\u2004' if self.gifter_message != "" else self.gifter_message)
-                self.html_content = self.html_content.replace('RECEIVER_MESSAGE', self.receiver_message)
-                self.html_content = self.html_content.replace('GIFTER_AVATAR_URL', self.gifter_avatar_url)
-                self.html_content = self.html_content.replace('RECEIVER_AVATAR_URL', self.receiver_avatar_url)
-                self.html_content = self.html_content.replace('TIMESTAMP_1', self.timestamp_1)
-                self.html_content = self.html_content.replace('TIMESTAMP_2', self.timestamp_2)
-                self.html_content = self.html_content.replace('FULL_DATE', self.full_date)
-                self.html_content = self.html_content.replace('KJASNZXCJD', f'{random.randint(36,47)}')
-        except FileNotFoundError:
-            raise Exception(f"HTML File not found: {filename}")
-        return self.html_content
+        
+        with open(filename, 'r', encoding="utf-8") as file:
+            content = file.read()
+        
+        content = content.replace('GIFTER_USERNAME', self.gifter_username)
+        content = content.replace('RECEIVER_USERNAME', self.receiver_username)
+        content = content.replace('GIFTER_MESSAGE', self.gifter_message + '\u2004' if self.gifter_message else self.gifter_message)
+        content = content.replace('RECEIVER_MESSAGE', self.receiver_message)
+        content = content.replace('GIFTER_AVATAR_URL', self.gifter_avatar_url)
+        content = content.replace('RECEIVER_AVATAR_URL', self.receiver_avatar_url)
+        content = content.replace('TIMESTAMP_1', self.timestamp_1)
+        content = content.replace('TIMESTAMP_2', self.timestamp_2)
+        content = content.replace('FULL_DATE', self.full_date)
+        content = content.replace('KJASNZXCJD', f'{random.randint(36, 47)}')
+        return content
 
 class NitroModal(discord.ui.Modal, title='Nitro proof generator'):
     nitro_type = discord.ui.TextInput(
@@ -129,25 +208,25 @@ class NitroModal(discord.ui.Modal, title='Nitro proof generator'):
         style=discord.TextStyle.short,
         required=False,
     )
-    gifteridd = discord.ui.TextInput(
+    gifter_id = discord.ui.TextInput(
         label="Gifter's ID (leave empty for yours)",
         style=discord.TextStyle.short,
         placeholder='12345678901234567890',
         required=False,
     )
-    giftertext = discord.ui.TextInput(
+    gifter_text = discord.ui.TextInput(
         label="Gifter's message",
         placeholder="Congratulations! You won the giveaway, here's your nitro: ",
         style=discord.TextStyle.short,
         required=False,
     )
-    receiveridd = discord.ui.TextInput(
+    receiver_id = discord.ui.TextInput(
         label="Receiver's ID (leave empty for random)",
         style=discord.TextStyle.short,
         placeholder='12345678901234567890',
         required=False,
     )
-    receivertext = discord.ui.TextInput(
+    receiver_text = discord.ui.TextInput(
         label="Receiver's message",
         style=discord.TextStyle.short,
         placeholder='OMG! Thanks!',
@@ -155,79 +234,50 @@ class NitroModal(discord.ui.Modal, title='Nitro proof generator'):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.note = ""
         try:
             await interaction.response.defer(ephemeral=False, thinking=True)
-            if self.nitro_type.value and self.nitro_type.value.lower() == "claimed":
-                self.nitroclaimed = True
-            else:
-                self.nitroclaimed = False
-            self.gifter = interaction.user
-            if self.gifteridd.value != "":
+            
+            is_claimed = self.nitro_type.value and self.nitro_type.value.lower() == "claimed"
+            
+            # Gifter
+            gifter = interaction.user
+            note = ""
+            if self.gifter_id.value:
                 try:
-                    self.gifter = await client.fetch_user(int(self.gifteridd.value))
-                except:
-                    self.note = "Note: Invalid Gifter ID"
-            if self.gifter.global_name is None:
-                self.gifter_globalname = self.gifter.name
-            else:
-                self.gifter_globalname = self.gifter.global_name
+                    gifter = await client.fetch_user(int(self.gifter_id.value))
+                except Exception:
+                    note = "Note: Invalid Gifter ID"
+            
+            # Receiver
             members = await interaction.guild.chunk()
-            self.receiver = random.choice(members)
-            if self.receiveridd.value != "":
+            receiver = random.choice(members)
+            if self.receiver_id.value:
                 try:
-                    self.receiver = await client.fetch_user(int(self.receiveridd.value))
-                except:
-                    self.note = "Note: Invalid Receiver ID"
-            if self.receiver.global_name is None:
-                self.receiver_globalname = self.receiver.name
-            else:
-                self.receiver_globalname = self.receiver.global_name
-            self.gifter_message = self.giftertext.value if self.giftertext.value else ""
-            self.receiver_message = self.receivertext.value
-            if not self.gifter.avatar:
-                self.gifter_avatar = self.gifter.default_avatar.url
-            else:
-                self.gifter_avatar = self.gifter.avatar.url
-            if not self.receiver.avatar:
-                self.receiver_avatar = self.receiver.default_avatar.url
-            else:
-                self.receiver_avatar = self.receiver.avatar.url
+                    receiver = await client.fetch_user(int(self.receiver_id.value))
+                except Exception:
+                    note = "Note: Invalid Receiver ID"
+            
+            gifter_message = self.gifter_text.value if self.gifter_text.value else ""
+            receiver_message = self.receiver_text.value
+            
             times = generate_time_range(interaction)
-            self.timestamp_1 = times[0]
-            self.timestamp_2 = times[1]
-            self.full_date = times[2]
-            proof = NitroPage(self.gifter_globalname, self.receiver_globalname, self.gifter_message, self.receiver_message, self.gifter_avatar, self.receiver_avatar, self.timestamp_1, self.timestamp_2, self.full_date, self.nitroclaimed).get_proof()
-            with open("assets/temp.html", "w", encoding="utf-8") as f:
-                f.write(proof)
-            browser = await pyppeteer.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
-            )
-            page = await browser.newPage()
-            await page.setViewport({'width': 1300, 'height': 500})
-            absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
-            await page.goto(absolute_path)
-            screenshot_options = {
-                'path': 'proof.png',
-                'clip': {
-                    'x': random.randint(1, 8),
-                    'y': random.randint(75, 83),
-                    'width': random.randint(850, 1100),
-                    'height': random.randint(400, 420)
-                }
-            }
-            await page.screenshot(screenshot_options)
-            await browser.close()
-            embed = discord.Embed(color=0x717CDA, title="Success", description=f"> **Please check your DMs!** {self.note if self.note else ''}")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            
+            proof = NitroPage(
+                get_user_name(gifter), get_user_name(receiver),
+                gifter_message, receiver_message,
+                get_user_avatar(gifter), get_user_avatar(receiver),
+                times[0], times[1], times[2], is_claimed
+            ).get_proof()
+            
+            await take_screenshot(proof, random.randint(1, 8), random.randint(75, 83),
+                                  random.randint(850, 1100), random.randint(400, 420), 1300, 500)
+            
+            await interaction.followup.send(embed=send_success_embed(interaction, note))
             await interaction.user.send(file=discord.File('proof.png'))
+            
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=0xFF0000, title="Error", description=f"> **Oops! Something went wrong.**\n> `{str(e)[:500]}`")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=send_error_embed(interaction, str(e)[:500]))
 
 @client.tree.command(description='Generate proof for a nitro giveaway.')
 async def nitroproof(interaction: discord.Interaction):
@@ -237,52 +287,49 @@ async def nitroproof(interaction: discord.Interaction):
         return
     await interaction.response.send_modal(NitroModal())
 
+# ============================================================
+# ROBUX PROOF
+# ============================================================
 class RobuxPage:
-    def __init__(self, gifter_username, receiver_username, receiver_message, gifter_avatar_url, receiver_avatar_url, timestamp_1, timestamp_2, full_date):
-        self.actual_datetime = datetime.datetime.now()
-        self.proof = ""
-        self.gifter_username = str(gifter_username).replace('<', '').replace('>', '').replace('script', '')
-        self.receiver_username = str(receiver_username).replace('<', '').replace('>', '').replace('script', '')
-        self.receiver_message = str(receiver_message).replace('<', '').replace('>', '').replace('script', '')
+    def __init__(self, gifter_username, receiver_username, receiver_message,
+                 gifter_avatar_url, receiver_avatar_url, timestamp_1, timestamp_2, full_date):
+        self.gifter_username = sanitize(gifter_username)
+        self.receiver_username = sanitize(receiver_username)
+        self.receiver_message = sanitize(receiver_message)
         self.gifter_avatar_url = gifter_avatar_url
         self.receiver_avatar_url = receiver_avatar_url
         self.timestamp_1 = timestamp_1
         self.timestamp_2 = timestamp_2
-        self.full_date = full_date
-        if self.full_date.startswith('0'):
-            self.full_date = self.full_date.replace('0', '', 1)
+        self.full_date = full_date.lstrip('0') if full_date.startswith('0') else full_date
 
     def get_proof(self):
-        filename = "assets/robuxproof.html"
-        try:
-            with open(filename, 'r', encoding="utf-8") as file:
-                self.html_content = file.read()
-                self.html_content = self.html_content.replace('GIFTER_USERNAME', self.gifter_username)
-                self.html_content = self.html_content.replace('RECEIVER_USERNAME', self.receiver_username)
-                self.html_content = self.html_content.replace('RECEIVER_MESSAGE', self.receiver_message)
-                self.html_content = self.html_content.replace('GIFTER_AVATAR_URL', self.gifter_avatar_url)
-                self.html_content = self.html_content.replace('RECEIVER_AVATAR_URL', self.receiver_avatar_url)
-                self.html_content = self.html_content.replace('TIMESTAMP_1', self.timestamp_1)
-                self.html_content = self.html_content.replace('TIMESTAMP_2', self.timestamp_2)
-                self.html_content = self.html_content.replace('FULL_DATE', self.full_date)
-        except FileNotFoundError:
-            raise Exception(f"File not found: {filename}")
-        return self.html_content
+        with open("assets/robuxproof.html", 'r', encoding="utf-8") as file:
+            content = file.read()
+        
+        content = content.replace('GIFTER_USERNAME', self.gifter_username)
+        content = content.replace('RECEIVER_USERNAME', self.receiver_username)
+        content = content.replace('RECEIVER_MESSAGE', self.receiver_message)
+        content = content.replace('GIFTER_AVATAR_URL', self.gifter_avatar_url)
+        content = content.replace('RECEIVER_AVATAR_URL', self.receiver_avatar_url)
+        content = content.replace('TIMESTAMP_1', self.timestamp_1)
+        content = content.replace('TIMESTAMP_2', self.timestamp_2)
+        content = content.replace('FULL_DATE', self.full_date)
+        return content
 
 class RobuxModal(discord.ui.Modal, title='Robux proof generator'):
-    gifteridd = discord.ui.TextInput(
+    gifter_id = discord.ui.TextInput(
         label="Gifter's ID (leave empty for yours)",
         style=discord.TextStyle.short,
         placeholder='12345678901234567890',
         required=False,
     )
-    receiveridd = discord.ui.TextInput(
+    receiver_id = discord.ui.TextInput(
         label="Receiver's ID (leave empty for random)",
         style=discord.TextStyle.short,
         placeholder='12345678901234567890',
         required=False,
     )
-    receivertext = discord.ui.TextInput(
+    receiver_text = discord.ui.TextInput(
         label="Receiver's message",
         style=discord.TextStyle.short,
         placeholder='OMG! Thanks!',
@@ -290,74 +337,43 @@ class RobuxModal(discord.ui.Modal, title='Robux proof generator'):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.note = ""
         try:
             await interaction.response.defer(ephemeral=False, thinking=True)
-            self.gifter = interaction.user
-            if self.gifteridd.value != "":
+            
+            gifter = interaction.user
+            note = ""
+            if self.gifter_id.value:
                 try:
-                    self.gifter = await client.fetch_user(int(self.gifteridd.value))
-                except:
-                    self.note = "Note: Invalid Gifter ID"
-            if self.gifter.global_name is None:
-                self.gifter_globalname = self.gifter.name
-            else:
-                self.gifter_globalname = self.gifter.global_name
+                    gifter = await client.fetch_user(int(self.gifter_id.value))
+                except Exception:
+                    note = "Note: Invalid Gifter ID"
+            
             members = await interaction.guild.chunk()
-            self.receiver = random.choice(members)
-            if self.receiveridd.value != "":
+            receiver = random.choice(members)
+            if self.receiver_id.value:
                 try:
-                    self.receiver = await client.fetch_user(int(self.receiveridd.value))
-                except:
-                    self.note = "Note: Invalid Receiver ID"
-            if self.receiver.global_name is None:
-                self.receiver_globalname = self.receiver.name
-            else:
-                self.receiver_globalname = self.receiver.global_name
-            self.receiver_message = self.receivertext.value
-            if not self.gifter.avatar:
-                self.gifter_avatar = self.gifter.default_avatar.url
-            else:
-                self.gifter_avatar = self.gifter.avatar.url
-            if not self.receiver.avatar:
-                self.receiver_avatar = self.receiver.default_avatar.url
-            else:
-                self.receiver_avatar = self.receiver.avatar.url
+                    receiver = await client.fetch_user(int(self.receiver_id.value))
+                except Exception:
+                    note = "Note: Invalid Receiver ID"
+            
             times = generate_time_range(interaction)
-            self.timestamp_1 = times[0]
-            self.timestamp_2 = times[1]
-            self.full_date = times[2]
-            proof = RobuxPage(self.gifter_globalname, self.receiver_globalname, self.receiver_message, self.gifter_avatar, self.receiver_avatar, self.timestamp_1, self.timestamp_2, self.full_date).get_proof()
-            with open("assets/temp.html", "w", encoding="utf-8") as f:
-                f.write(proof)
-            browser = await pyppeteer.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
-            )
-            page = await browser.newPage()
-            await page.setViewport({'width': 1300, 'height': 500})
-            absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
-            await page.goto(absolute_path)
-            screenshot_options = {
-                'path': 'proof.png',
-                'clip': {
-                    'x': random.randint(1, 8),
-                    'y': random.randint(130, 135),
-                    'width': random.randint(850, 1100),
-                    'height': random.randint(350, 355)
-                }
-            }
-            await page.screenshot(screenshot_options)
-            await browser.close()
-            embed = discord.Embed(color=0x717CDA, title="Success", description=f"> **Please check your DMs!** {self.note if self.note else ''}")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            
+            proof = RobuxPage(
+                get_user_name(gifter), get_user_name(receiver),
+                self.receiver_text.value,
+                get_user_avatar(gifter), get_user_avatar(receiver),
+                times[0], times[1], times[2]
+            ).get_proof()
+            
+            await take_screenshot(proof, random.randint(1, 8), random.randint(130, 135),
+                                  random.randint(850, 1100), random.randint(350, 355), 1300, 500)
+            
+            await interaction.followup.send(embed=send_success_embed(interaction, note))
             await interaction.user.send(file=discord.File('proof.png'))
+            
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=0xFF0000, title="Error", description=f"> **Oops! Something went wrong.**\n> `{str(e)[:500]}`")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=send_error_embed(interaction, str(e)[:500]))
 
 @client.tree.command(description='Generate proof for a robux giveaway.')
 async def robuxproof(interaction: discord.Interaction):
@@ -367,54 +383,51 @@ async def robuxproof(interaction: discord.Interaction):
         return
     await interaction.response.send_modal(RobuxModal())
 
+# ============================================================
+# MINECRAFT PROOF
+# ============================================================
 class MinecraftPage:
-    def __init__(self, gifter_username, receiver_username, receiver_message, gifter_avatar_url, receiver_avatar_url, timestamp_1, timestamp_2, full_date):
-        self.actual_datetime = datetime.datetime.now()
-        self.proof = ""
-        self.gifter_username = str(gifter_username).replace('<', '').replace('>', '').replace('script', '')
-        self.receiver_username = str(receiver_username).replace('<', '').replace('>', '').replace('script', '')
-        self.receiver_message = str(receiver_message).replace('<', '').replace('>', '').replace('script', '')
+    def __init__(self, gifter_username, receiver_username, receiver_message,
+                 gifter_avatar_url, receiver_avatar_url, timestamp_1, timestamp_2, full_date):
+        self.gifter_username = sanitize(gifter_username)
+        self.receiver_username = sanitize(receiver_username)
+        self.receiver_message = sanitize(receiver_message)
         self.gifter_avatar_url = gifter_avatar_url
         self.receiver_avatar_url = receiver_avatar_url
         self.timestamp_1 = timestamp_1
         self.timestamp_2 = timestamp_2
-        self.full_date = full_date
-        if self.full_date.startswith('0'):
-            self.full_date = self.full_date.replace('0', '', 1)
+        self.full_date = full_date.lstrip('0') if full_date.startswith('0') else full_date
 
     def get_proof(self):
-        filename = "assets/minecraftproof.html"
-        try:
-            with open(filename, 'r', encoding="utf-8") as file:
-                self.html_content = file.read()
-                self.html_content = self.html_content.replace('GIFTER_USERNAME', self.gifter_username)
-                self.html_content = self.html_content.replace('RECEIVER_USERNAME', self.receiver_username)
-                self.html_content = self.html_content.replace('RECEIVER_MESSAGE', self.receiver_message)
-                self.html_content = self.html_content.replace('GIFTER_AVATAR_URL', self.gifter_avatar_url)
-                self.html_content = self.html_content.replace('MC_EMAIL', 'user' + str(random.randint(1, 10000000)) + '@gmail.com')
-                self.html_content = self.html_content.replace('MC_PASS', 'pass' + str(random.randint(1, 10000000)))
-                self.html_content = self.html_content.replace('RECEIVER_AVATAR_URL', self.receiver_avatar_url)
-                self.html_content = self.html_content.replace('TIMESTAMP_1', self.timestamp_1)
-                self.html_content = self.html_content.replace('TIMESTAMP_2', self.timestamp_2)
-                self.html_content = self.html_content.replace('FULL_DATE', self.full_date)
-        except FileNotFoundError:
-            raise Exception(f"File not found: {filename}")
-        return self.html_content
+        with open("assets/minecraftproof.html", 'r', encoding="utf-8") as file:
+            content = file.read()
+        
+        content = content.replace('GIFTER_USERNAME', self.gifter_username)
+        content = content.replace('RECEIVER_USERNAME', self.receiver_username)
+        content = content.replace('RECEIVER_MESSAGE', self.receiver_message)
+        content = content.replace('GIFTER_AVATAR_URL', self.gifter_avatar_url)
+        content = content.replace('MC_EMAIL', 'user' + str(random.randint(1, 10000000)) + '@gmail.com')
+        content = content.replace('MC_PASS', 'pass' + str(random.randint(1, 10000000)))
+        content = content.replace('RECEIVER_AVATAR_URL', self.receiver_avatar_url)
+        content = content.replace('TIMESTAMP_1', self.timestamp_1)
+        content = content.replace('TIMESTAMP_2', self.timestamp_2)
+        content = content.replace('FULL_DATE', self.full_date)
+        return content
 
 class MinecraftModal(discord.ui.Modal, title='Minecraft proof generator'):
-    gifteridd = discord.ui.TextInput(
+    gifter_id = discord.ui.TextInput(
         label="Gifter's ID (leave empty for yours)",
         style=discord.TextStyle.short,
         placeholder='12345678901234567890',
         required=False,
     )
-    receiveridd = discord.ui.TextInput(
+    receiver_id = discord.ui.TextInput(
         label="Receiver's ID (leave empty for random)",
         style=discord.TextStyle.short,
         placeholder='12345678901234567890',
         required=False,
     )
-    receivertext = discord.ui.TextInput(
+    receiver_text = discord.ui.TextInput(
         label="Receiver's message",
         style=discord.TextStyle.short,
         placeholder='OMG! Thanks!',
@@ -422,74 +435,43 @@ class MinecraftModal(discord.ui.Modal, title='Minecraft proof generator'):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.note = ""
         try:
             await interaction.response.defer(ephemeral=False, thinking=True)
-            self.gifter = interaction.user
-            if self.gifteridd.value != "":
+            
+            gifter = interaction.user
+            note = ""
+            if self.gifter_id.value:
                 try:
-                    self.gifter = await client.fetch_user(int(self.gifteridd.value))
-                except:
-                    self.note = "Note: Invalid Gifter ID"
-            if self.gifter.global_name is None:
-                self.gifter_globalname = self.gifter.name
-            else:
-                self.gifter_globalname = self.gifter.global_name
+                    gifter = await client.fetch_user(int(self.gifter_id.value))
+                except Exception:
+                    note = "Note: Invalid Gifter ID"
+            
             members = await interaction.guild.chunk()
-            self.receiver = random.choice(members)
-            if self.receiveridd.value != "":
+            receiver = random.choice(members)
+            if self.receiver_id.value:
                 try:
-                    self.receiver = await client.fetch_user(int(self.receiveridd.value))
-                except:
-                    self.note = "Note: Invalid Receiver ID"
-            if self.receiver.global_name is None:
-                self.receiver_globalname = self.receiver.name
-            else:
-                self.receiver_globalname = self.receiver.global_name
-            self.receiver_message = self.receivertext.value
-            if not self.gifter.avatar:
-                self.gifter_avatar = self.gifter.default_avatar.url
-            else:
-                self.gifter_avatar = self.gifter.avatar.url
-            if not self.receiver.avatar:
-                self.receiver_avatar = self.receiver.default_avatar.url
-            else:
-                self.receiver_avatar = self.receiver.avatar.url
+                    receiver = await client.fetch_user(int(self.receiver_id.value))
+                except Exception:
+                    note = "Note: Invalid Receiver ID"
+            
             times = generate_time_range(interaction)
-            self.timestamp_1 = times[0]
-            self.timestamp_2 = times[1]
-            self.full_date = times[2]
-            proof = MinecraftPage(self.gifter_globalname, self.receiver_globalname, self.receiver_message, self.gifter_avatar, self.receiver_avatar, self.timestamp_1, self.timestamp_2, self.full_date).get_proof()
-            with open("assets/temp.html", "w", encoding="utf-8") as f:
-                f.write(proof)
-            browser = await pyppeteer.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
-            )
-            page = await browser.newPage()
-            await page.setViewport({'width': 1300, 'height': 500})
-            absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
-            await page.goto(absolute_path)
-            screenshot_options = {
-                'path': 'proof.png',
-                'clip': {
-                    'x': random.randint(1, 8),
-                    'y': random.randint(170, 180),
-                    'width': random.randint(850, 1100),
-                    'height': random.randint(300, 320)
-                }
-            }
-            await page.screenshot(screenshot_options)
-            await browser.close()
-            embed = discord.Embed(color=0x717CDA, title="Success", description="> **Please check your DMs!**")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            
+            proof = MinecraftPage(
+                get_user_name(gifter), get_user_name(receiver),
+                self.receiver_text.value,
+                get_user_avatar(gifter), get_user_avatar(receiver),
+                times[0], times[1], times[2]
+            ).get_proof()
+            
+            await take_screenshot(proof, random.randint(1, 8), random.randint(170, 180),
+                                  random.randint(850, 1100), random.randint(300, 320), 1300, 500)
+            
+            await interaction.followup.send(embed=send_success_embed(interaction, note))
             await interaction.user.send(file=discord.File('proof.png'))
+            
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=0xFF0000, title="Error", description=f"> **Oops! Something went wrong.**\n> `{str(e)[:500]}`")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=send_error_embed(interaction, str(e)[:500]))
 
 @client.tree.command(description='Generate proof for a minecraft giveaway.')
 async def minecraftproof(interaction: discord.Interaction):
@@ -499,32 +481,28 @@ async def minecraftproof(interaction: discord.Interaction):
         return
     await interaction.response.send_modal(MinecraftModal())
 
+# ============================================================
+# BOOSTS PROOF
+# ============================================================
 class BoostsPage:
     def __init__(self, channel_name, gifter_username, timestamp_1, full_date):
-        self.actual_datetime = datetime.datetime.now()
-        self.proof = ""
-        self.channel_name = str(channel_name).replace('<', '').replace('>', '').replace('script', '')
-        self.gifter_username = str(gifter_username).replace('<', '').replace('>', '').replace('script', '')
+        self.channel_name = sanitize(channel_name)
+        self.gifter_username = sanitize(gifter_username)
         self.timestamp_1 = timestamp_1
-        self.full_date = full_date
-        if self.full_date.startswith('0'):
-            self.full_date = self.full_date.replace('0', '', 1)
+        self.full_date = full_date.lstrip('0') if full_date.startswith('0') else full_date
 
     def get_proof(self):
-        filename = "assets/boostproof.html"
-        try:
-            with open(filename, 'r', encoding="utf-8") as file:
-                self.html_content = file.read()
-                self.html_content = self.html_content.replace('CHANNEL_NAME', self.channel_name)
-                self.html_content = self.html_content.replace('BOOSTER_USERNAME', self.gifter_username)
-                self.html_content = self.html_content.replace('TIMESTAMP_1', f'Today at {self.timestamp_1}')
-                self.html_content = self.html_content.replace('FULL_DATE', self.full_date)
-        except FileNotFoundError:
-            raise Exception(f"File not found: {filename}")
-        return self.html_content
+        with open("assets/boostproof.html", 'r', encoding="utf-8") as file:
+            content = file.read()
+        
+        content = content.replace('CHANNEL_NAME', self.channel_name)
+        content = content.replace('BOOSTER_USERNAME', self.gifter_username)
+        content = content.replace('TIMESTAMP_1', f'Today at {self.timestamp_1}')
+        content = content.replace('FULL_DATE', self.full_date)
+        return content
 
 class BoostsModal(discord.ui.Modal, title='14x Boosts proof generator'):
-    gifter = discord.ui.TextInput(
+    booster_username = discord.ui.TextInput(
         label="Booster Username (leave empty for yours)",
         placeholder=".gg/proofgen",
         style=discord.TextStyle.short,
@@ -541,52 +519,26 @@ class BoostsModal(discord.ui.Modal, title='14x Boosts proof generator'):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False, thinking=True)
-            if self.gifter.value == "":
-                self.gifter_obj = interaction.user
-                if self.gifter_obj.global_name is None:
-                    self.gifter_globalname = self.gifter_obj.name
-                else:
-                    self.gifter_globalname = self.gifter_obj.global_name
+            
+            if self.booster_username.value:
+                gifter_name = self.booster_username.value
             else:
-                self.gifter_globalname = self.gifter.value
-            if self.channel_name.value == "":
-                self.channelname = "general"
-            else:
-                self.channelname = self.channel_name.value
+                gifter_name = get_user_name(interaction.user)
+            
+            channel_name = self.channel_name.value if self.channel_name.value else "general"
+            
             times = generate_time_range(interaction)
-            self.timestamp_1 = times[0]
-            self.full_date = times[2]
-            proof = BoostsPage(self.channelname, self.gifter_globalname, self.timestamp_1, self.full_date).get_proof()
-            with open("assets/temp.html", "w", encoding="utf-8") as f:
-                f.write(proof)
-            browser = await pyppeteer.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
-            )
-            page = await browser.newPage()
-            await page.setViewport({'width': 1350, 'height': 700})
-            absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
-            await page.goto(absolute_path)
-            screenshot_options = {
-                'path': 'proof.png',
-                'clip': {
-                    'x': 0,
-                    'y': 140,
-                    'width': 950,
-                    'height': 550
-                }
-            }
-            await page.screenshot(screenshot_options)
-            await browser.close()
-            embed = discord.Embed(color=0x717CDA, title="Success", description="> **Please check your DMs!**")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            
+            proof = BoostsPage(channel_name, gifter_name, times[0], times[2]).get_proof()
+            
+            await take_screenshot(proof, 0, 140, 950, 550, 1350, 700)
+            
+            await interaction.followup.send(embed=send_success_embed(interaction))
             await interaction.user.send(file=discord.File('proof.png'))
+            
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=0xFF0000, title="Error", description=f"> **Oops! Something went wrong.**\n> `{str(e)[:500]}`")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=send_error_embed(interaction, str(e)[:500]))
 
 @client.tree.command(description='Generate proof for a 14x boost sale.')
 async def boostsproof(interaction: discord.Interaction):
@@ -596,28 +548,26 @@ async def boostsproof(interaction: discord.Interaction):
         return
     await interaction.response.send_modal(BoostsModal())
 
+# ============================================================
+# INVENTORY PROOF
+# ============================================================
 class InventoryPage:
     def __init__(self, gifter_username, nitro_amount, basic_amount):
-        self.actual_datetime = datetime.datetime.now()
-        self.proof = ""
-        self.gifter_username = str(gifter_username).replace('<', '').replace('>', '').replace('script', '')
-        self.nitro_amount = str(nitro_amount).replace('<', '').replace('>', '').replace('script', '')
-        self.basic_amount = str(basic_amount).replace('<', '').replace('>', '').replace('script', '')
+        self.gifter_username = sanitize(gifter_username)
+        self.nitro_amount = sanitize(nitro_amount)
+        self.basic_amount = sanitize(basic_amount)
 
     def get_proof(self):
-        filename = "assets/inventorypage.html"
-        try:
-            with open(filename, 'r', encoding="utf-8") as file:
-                self.html_content = file.read()
-                self.html_content = self.html_content.replace('USERNAME', self.gifter_username)
-                self.html_content = self.html_content.replace('BOOSTAMOUNT', self.nitro_amount)
-                self.html_content = self.html_content.replace('BASICAMOUNT', self.basic_amount)
-        except FileNotFoundError:
-            raise Exception(f"File not found: {filename}")
-        return self.html_content
+        with open("assets/inventorypage.html", 'r', encoding="utf-8") as file:
+            content = file.read()
+        
+        content = content.replace('USERNAME', self.gifter_username)
+        content = content.replace('BOOSTAMOUNT', self.nitro_amount)
+        content = content.replace('BASICAMOUNT', self.basic_amount)
+        return content
 
 class InventoryModal(discord.ui.Modal, title='Inventory proof generator'):
-    gifter = discord.ui.TextInput(
+    username = discord.ui.TextInput(
         label="Username (leave empty for yours)",
         placeholder="mahdi1337",
         style=discord.TextStyle.short,
@@ -641,45 +591,25 @@ class InventoryModal(discord.ui.Modal, title='Inventory proof generator'):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False, thinking=True)
-            if self.gifter.value == "":
-                self.gifter_obj = interaction.user
-                if self.gifter_obj.global_name is None:
-                    self.gifter_globalname = self.gifter_obj.name
-                else:
-                    self.gifter_globalname = self.gifter_obj.global_name
+            
+            if self.username.value:
+                gifter_name = self.username.value
             else:
-                self.gifter_globalname = self.gifter.value
-            proof = InventoryPage(self.gifter_globalname, self.nitro_amount.value, self.basic_amount.value).get_proof()
-            with open("assets/temp.html", "w", encoding="utf-8") as f:
-                f.write(proof)
-            browser = await pyppeteer.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
-            )
-            page = await browser.newPage()
-            await page.setViewport({'width': 1350, 'height': 1100})
-            absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
-            await page.goto(absolute_path)
-            screenshot_options = {
-                'path': 'proof.png',
-                'clip': {
-                    'x': 0,
-                    'y': 0,
-                    'width': 1070,
-                    'height': 1150
-                }
-            }
-            await page.screenshot(screenshot_options)
-            await browser.close()
-            embed = discord.Embed(color=0x717CDA, title="Success", description="> **Please check your DMs!**")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+                gifter_name = get_user_name(interaction.user)
+            
+            nitro_amt = self.nitro_amount.value if self.nitro_amount.value else "0"
+            basic_amt = self.basic_amount.value if self.basic_amount.value else "0"
+            
+            proof = InventoryPage(gifter_name, nitro_amt, basic_amt).get_proof()
+            
+            await take_screenshot(proof, 0, 0, 1070, 1150, 1350, 1100)
+            
+            await interaction.followup.send(embed=send_success_embed(interaction))
             await interaction.user.send(file=discord.File('proof.png'))
+            
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=0xFF0000, title="Error", description=f"> **Oops! Something went wrong.**\n> `{str(e)[:500]}`")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=send_error_embed(interaction, str(e)[:500]))
 
 @client.tree.command(description='Generate proof of a gift inventory.')
 async def inventoryproof(interaction: discord.Interaction):
@@ -689,36 +619,37 @@ async def inventoryproof(interaction: discord.Interaction):
         return
     await interaction.response.send_modal(InventoryModal())
 
+# ============================================================
+# PAYPAL PROOF
+# ============================================================
 class PaypalPage:
     def __init__(self, amount, receiver):
-        if ',' not in str(amount):
+        amount = str(amount)
+        if ',' not in amount:
             amount += ',00'
-        if '.' in str(amount):
-            amount = str(amount).replace('.', ',')
-        if '$' in str(amount):
-            amount = str(amount).replace('$', '')
+        if '.' in amount:
+            amount = amount.replace('.', ',')
+        if '$' in amount:
+            amount = amount.replace('$', '')
         self.amount = amount
-        self.receiver = receiver
+        self.receiver = sanitize(receiver)
 
     def get_proof(self):
-        filename = "assets/paypal_page.html"
-        try:
-            with open(filename, 'r', encoding="utf-8") as file:
-                self.html_content = file.read()
-                self.html_content = self.html_content.replace('AMOUNT', self.amount)
-                self.html_content = self.html_content.replace('RECEIVER', self.receiver)
-        except FileNotFoundError:
-            raise Exception(f"File not found: {filename}")
-        return self.html_content
+        with open("assets/paypal_page.html", 'r', encoding="utf-8") as file:
+            content = file.read()
+        
+        content = content.replace('AMOUNT', self.amount)
+        content = content.replace('RECEIVER', self.receiver)
+        return content
 
 class PaypalModal(discord.ui.Modal, title='Paypal transaction proof generator'):
-    gifter = discord.ui.TextInput(
+    receiver_name = discord.ui.TextInput(
         label="Receiver Name",
         placeholder="mahdi",
         style=discord.TextStyle.short,
         required=True,
     )
-    nitro_amount = discord.ui.TextInput(
+    amount = discord.ui.TextInput(
         label='Amount',
         style=discord.TextStyle.short,
         placeholder='10',
@@ -729,28 +660,26 @@ class PaypalModal(discord.ui.Modal, title='Paypal transaction proof generator'):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False, thinking=True)
-            proof = PaypalPage(self.nitro_amount.value, self.gifter.value).get_proof()
+            
+            proof = PaypalPage(self.amount.value, self.receiver_name.value).get_proof()
+            
             with open("assets/temp.html", "w", encoding="utf-8") as f:
                 f.write(proof)
-            browser = await pyppeteer.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer']
-            )
+            
+            browser = await launch_browser()
             page = await browser.newPage()
-            absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
             await page.setViewport({'width': 1280, 'height': 1024})
-            await page.goto(absolute_path)
+            absolute_path = f'file://{os.path.abspath("assets/temp.html")}'
+            await page.goto(absolute_path, waitUntil='networkidle0')
             await page.screenshot({'path': 'proof.png', 'fullPage': True})
             await browser.close()
-            embed = discord.Embed(color=0x717CDA, title="Success", description="> **Please check your DMs!**")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            
+            await interaction.followup.send(embed=send_success_embed(interaction))
             await interaction.user.send(file=discord.File('proof.png'))
+            
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=0xFF0000, title="Error", description=f"> **Oops! Something went wrong.**\n> `{str(e)[:500]}`")
-            embed.set_footer(text="PekkleDev")
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=send_error_embed(interaction, str(e)[:500]))
 
 @client.tree.command(description='Generate proof of a paypal transaction.')
 async def paypalproof(interaction: discord.Interaction):
@@ -760,13 +689,21 @@ async def paypalproof(interaction: discord.Interaction):
         return
     await interaction.response.send_modal(PaypalModal())
 
+# ============================================================
+# PROOF & HELP KOMUTLARI
+# ============================================================
 @client.tree.command(description='See all the proof generator commands.')
 async def proof(interaction: discord.Interaction):
     if interaction.channel.id not in channels:
         embed = discord.Embed(color=0xFF0000, title="Error", description="> Oops! You can't use this command here.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
-    embed = discord.Embed(color=0x717CDA, title="Proof Generator", description="/nitroproof\n/inventoryproof\n/robuxproof\n/minecraftproof\n/paypalproof\n/bloxfruitsproof - COMING SOON\n/cashappproof - COMING SOON")
+    
+    embed = discord.Embed(
+        color=0x717CDA,
+        title="Proof Generator",
+        description="/nitroproof\n/inventoryproof\n/robuxproof\n/minecraftproof\n/paypalproof\n/boostsproof\n/bloxfruitsproof - COMING SOON\n/cashappproof - COMING SOON"
+    )
     embed.set_footer(text="PekkleDev")
     await interaction.response.send_message(embed=embed, delete_after=10)
 
@@ -774,4 +711,11 @@ async def proof(interaction: discord.Interaction):
 async def help(interaction: discord.Interaction):
     await proof.callback(interaction)
 
-client.run(token)
+# ============================================================
+# BOT BAŞLAT
+# ============================================================
+if __name__ == "__main__":
+    if not token:
+        print(" TOKEN ortam değişkeni bulunamadı!")
+    else:
+        client.run(token)
