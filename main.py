@@ -6,17 +6,24 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+# ==========================================
+# AYARLAR
+# ==========================================
 TOKEN = os.getenv("TOKEN")
 
-# /proof mesajının gönderileceği kanal ID'sini buraya yaz
 PROOF_CHANNEL_ID = 1563982186011435232
-
-# Otomatik durum rolü ayarları
 STATUS_ROLE_ID = 1563982169100132484
+STATUS_LOG_CHANNEL_ID = 1563982173491564594
+
 REQUIRED_STATUS_TEXT = "/trnitro"
 
-
+# ==========================================
+# BOT
+# ==========================================
 intents = discord.Intents.default()
+intents.members = True
+intents.presences = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
@@ -29,7 +36,13 @@ def generate_code():
     return "NITRO-" + "-".join(parts)
 
 
-@bot.tree.command(name="nitro", description="Nitro kodu oluştur.")
+# ==========================================
+# /NITRO
+# ==========================================
+@bot.tree.command(
+    name="nitro",
+    description="Tür ve süre seçerek kod oluştur."
+)
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.choices(
@@ -69,6 +82,9 @@ async def nitro(
     await interaction.response.send_message(embed=embed)
 
 
+# ==========================================
+# /PROOF
+# ==========================================
 @bot.tree.command(
     name="proof",
     description="Ödül kazanım görselini belirlenen kanala gönder."
@@ -80,10 +96,9 @@ async def proof(
     interaction: discord.Interaction,
     gorsel_url: str
 ):
-    # Yalnızca HTTP/HTTPS görsel bağlantılarına izin ver
-    if not gorsel_url.startswith(("https://", "http://")):
+    if not gorsel_url.startswith("https://"):
         await interaction.response.send_message(
-            "Lütfen geçerli bir HTTPS görsel URL'si gir.",
+            "HTTPS görsel bağlantısı gir.",
             ephemeral=True
         )
         return
@@ -95,7 +110,7 @@ async def proof(
             channel = await bot.fetch_channel(PROOF_CHANNEL_ID)
         except discord.HTTPException:
             await interaction.response.send_message(
-                "Belirlenen kanal bulunamadı. Kanal ID'sini kontrol et.",
+                "Belirlenen kanal bulunamadı.",
                 ephemeral=True
             )
             return
@@ -115,9 +130,9 @@ async def proof(
 
     try:
         await channel.send(embed=embed)
-    except discord.HTTPException:
+    except (discord.HTTPException, discord.Forbidden):
         await interaction.response.send_message(
-            "Mesaj gönderilemedi. Botun kanal izinlerini ve görsel URL'sini kontrol et.",
+            "Mesaj gönderilemedi. Kanal izinlerini kontrol et.",
             ephemeral=True
         )
         return
@@ -128,33 +143,9 @@ async def proof(
     )
 
 
-@nitro.error
-@proof.error
-async def command_error(
-    interaction: discord.Interaction,
-    error: app_commands.AppCommandError
-):
-    if isinstance(error, app_commands.MissingPermissions):
-        message = "❌ Bu komutu yalnızca yöneticiler kullanabilir."
-    else:
-        message = "Bir hata oluştu. Bot ayarlarını kontrol et."
-
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(
-            message, ephemeral=True
-        )
-
-
-intents.members = True
-intents.presences = True
-
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents
-)
-
+# ==========================================
+# DURUM METNİNE GÖRE OTOMATİK ROL + LOG
+# ==========================================
 @bot.event
 async def on_presence_update(before, after):
     if after.bot:
@@ -164,33 +155,122 @@ async def on_presence_update(before, after):
     if role is None:
         return
 
-    activity_text = " ".join(
-        str(getattr(activity, "state", "") or "")
-        + " "
-        + str(getattr(activity, "name", "") or "")
-        for activity in after.activities
-    ).casefold()
+    def get_custom_status(member):
+        for activity in member.activities:
+            if isinstance(activity, discord.CustomActivity):
+                return str(activity.state or "").casefold()
+        return ""
 
-    if REQUIRED_STATUS_TEXT.casefold() in activity_text:
-        if role not in after.roles:
-            try:
-                await after.add_roles(
-                    role,
-                    reason="Gerekli durum metni algılandı"
-                )
-            except discord.Forbidden:
-                print("Botun rol verme yetkisi yok.")
+    old_status = get_custom_status(before)
+    new_status = get_custom_status(after)
 
+    required = REQUIRED_STATUS_TEXT.casefold()
+    had_text = required in old_status
+    has_text = required in new_status
+
+    # Durum metni değişmediyse işlem yapma
+    if had_text == has_text:
+        return
+
+    log_channel = bot.get_channel(STATUS_LOG_CHANNEL_ID)
+
+    try:
+        if has_text and role not in after.roles:
+            await after.add_roles(
+                role,
+                reason="Gerekli durum metni eklendi"
+            )
+
+            embed = discord.Embed(
+                title="✅ Otomatik Rol Verildi",
+                color=discord.Color.green(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(
+                name="Üye",
+                value=f"{after.mention} (`{after.id}`)",
+                inline=False
+            )
+            embed.add_field(name="Rol", value=role.mention, inline=True)
+            embed.add_field(
+                name="Durum",
+                value=REQUIRED_STATUS_TEXT,
+                inline=True
+            )
+
+        elif not has_text and role in after.roles:
+            await after.remove_roles(
+                role,
+                reason="Gerekli durum metni kaldırıldı"
+            )
+
+            embed = discord.Embed(
+                title="➖ Otomatik Rol Kaldırıldı",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.add_field(
+                name="Üye",
+                value=f"{after.mention} (`{after.id}`)",
+                inline=False
+            )
+            embed.add_field(name="Rol", value=role.mention, inline=True)
+            embed.add_field(
+                name="Durum",
+                value="Gerekli metin kaldırıldı",
+                inline=True
+            )
+        else:
+            return
+
+        if log_channel:
+            await log_channel.send(embed=embed)
+
+    except discord.Forbidden:
+        print("Rol işlemi başarısız: bot izinlerini kontrol et.")
+    except discord.HTTPException as error:
+        print(f"Discord API hatası: {error}")
+
+
+# ==========================================
+# KOMUT HATALARI
+# ==========================================
+@nitro.error
+@proof.error
+async def command_error(interaction, error):
+    if isinstance(error, app_commands.MissingPermissions):
+        message = "❌ Bu komutu yalnızca yöneticiler kullanabilir."
+    else:
+        print(f"Komut hatası: {error}")
+        message = "Bir hata oluştu. Bot ayarlarını kontrol et."
+
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.response.send_message(
+            message,
+            ephemeral=True
+        )
+
+
+# ==========================================
+# BAŞLAT
+# ==========================================
+@bot.event
+async def on_ready():
+    try:
+        synced = await bot.tree.sync()
+        print(
+            f"{bot.user} aktif! "
+            f"{len(synced)} komut senkronize edildi."
+        )
+    except discord.HTTPException as error:
+        print(f"Komut senkronizasyon hatası: {error}")
 
 
 if not TOKEN:
-    raise RuntimeError("DISCORD_BOT_TOKEN ortam değişkeni ayarlanmamış!")
-
-
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"{bot.user} aktif!")
-
+    raise RuntimeError(
+        "DISCORD_BOT_TOKEN ortam değişkeni ayarlanmamış!"
+    )
 
 bot.run(TOKEN)
