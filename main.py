@@ -31,6 +31,14 @@ intents.presences = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
+def generate_code(prefix):
+    chars = string.ascii_uppercase + string.digits
+    parts = [
+        "".join(random.choices(chars, k=4))
+        for _ in range(3)
+    ]
+    return f"{prefix}-" + "-".join(parts)
+
 # ==========================================
 
 # GUILD TAG KONTROLÜ
