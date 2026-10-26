@@ -573,6 +573,16 @@ async def dmall(
 
 
 # ==========================================
+# ÖZEL DURUM DEĞİŞİNCE ROLÜ KONTROL ET
+# ==========================================
+
+@bot.event
+async def on_presence_update(before, after):
+    await update_special_role(after)
+
+
+
+# ==========================================
 
 # ÜYE BİLGİSİ DEĞİŞİNCE ROLÜ KONTROL ET
 
