@@ -135,6 +135,13 @@ async def update_special_role(member):
 
     tag_match = has_server_guild_tag(member)
 
+
+    print(
+    f"[ROL KONTROL] {member} | "
+    f"Durum: {status_match} | "
+    f"Guild Tag: {tag_match} | "
+    f"Rol ID: {STATUS_ROLE_ID}"
+)
     # Durum yazısı VEYA Guild Tag varsa rol bulunmalı.
 
     should_have_role = status_match or tag_match
