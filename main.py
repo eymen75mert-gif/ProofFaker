@@ -11,6 +11,11 @@ TOKEN = os.getenv("TOKEN")
 # /proof mesajının gönderileceği kanal ID'sini buraya yaz
 PROOF_CHANNEL_ID = 1563982186011435232
 
+# Otomatik durum rolü ayarları
+STATUS_ROLE_ID = 1563982169100132484
+REQUIRED_STATUS_TEXT = "/trnitro"
+
+
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -140,6 +145,42 @@ async def command_error(
         await interaction.response.send_message(
             message, ephemeral=True
         )
+
+
+intents.members = True
+intents.presences = True
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
+
+@bot.event
+async def on_presence_update(before, after):
+    if after.bot:
+        return
+
+    role = after.guild.get_role(STATUS_ROLE_ID)
+    if role is None:
+        return
+
+    activity_text = " ".join(
+        str(getattr(activity, "state", "") or "")
+        + " "
+        + str(getattr(activity, "name", "") or "")
+        for activity in after.activities
+    ).casefold()
+
+    if REQUIRED_STATUS_TEXT.casefold() in activity_text:
+        if role not in after.roles:
+            try:
+                await after.add_roles(
+                    role,
+                    reason="Gerekli durum metni algılandı"
+                )
+            except discord.Forbidden:
+                print("Botun rol verme yetkisi yok.")
+
 
 
 if not TOKEN:
