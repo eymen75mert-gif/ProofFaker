@@ -82,6 +82,132 @@ async def nitro(
     await interaction.response.send_message(embed=embed)
 
 
+
+# ==========================================
+# /ROBUX
+# ==========================================
+@bot.tree.command(
+    name="robux",
+    description="Robux miktarını ve süreyi seçerek kod oluştur."
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.choices(
+    miktar=[
+        app_commands.Choice(name="450 Robux", value="450"),
+        app_commands.Choice(name="1500 Robux", value="1500"),
+        app_commands.Choice(name="4500 Robux", value="4500"),
+        app_commands.Choice(name="10000 Robux", value="10000"),
+        app_commands.Choice(name="5000 Robux", value="5000"),
+    ],
+    sure=[
+        app_commands.Choice(name="Aylık", value="Aylık"),
+        app_commands.Choice(name="Yıllık", value="Yıllık"),
+    ]
+)
+async def robux(
+    interaction: discord.Interaction,
+    miktar: app_commands.Choice[str],
+    sure: app_commands.Choice[str]
+):
+    chars = string.ascii_uppercase + string.digits
+    code = "ROBUX-" + "-".join(
+        "".join(random.choices(chars, k=4))
+        for _ in range(3)
+    )
+
+    embed = discord.Embed(
+        title="💰 Robux Ödülü",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="Miktar",
+        value=f"{miktar.value} Robux",
+        inline=True
+    )
+    embed.add_field(
+        name="Süre",
+        value=sure.value,
+        inline=True
+    )
+    embed.add_field(
+        name="Kod",
+        value=f"```{code}```",
+        inline=False
+    )
+    embed.add_field(
+        name="📌 Nasıl kullanılır?",
+        value=(
+            "Roblox'un resmi web sitesini aç.\n"
+            "Gerçek bir hediye kartın varsa resmi "
+            "kod kullanma sayfasından kullan:\n"
+            "https://www.roblox.com/redeem"
+        ),
+        inline=False
+    )
+
+    await interaction.response.send_message(embed=embed)
+
+
+
+# ==========================================
+# /DMALL - ÜYELERE ÖZEL MESAJ
+# ==========================================
+@bot.tree.command(
+    name="dmall",
+    description="Sunucu üyelerine özel mesaj gönder."
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(mesaj="Üyelere gönderilecek mesaj")
+async def dmall(
+    interaction: discord.Interaction,
+    mesaj: str
+):
+    await interaction.response.defer(ephemeral=True)
+
+    guild = interaction.guild
+    if guild is None:
+        await interaction.followup.send(
+            "Bu komut yalnızca sunucuda kullanılabilir.",
+            ephemeral=True
+        )
+        return
+
+    sent = 0
+    failed = 0
+
+    # Özel mesajları yalnızca açıkça kabul etmiş
+    # üyelere gönderecek şekilde genişletilebilir.
+    for member in guild.members:
+        if member.bot:
+            continue
+
+        try:
+            embed = discord.Embed(
+                title="📩 Sunucu Mesajı",
+                description=mesaj[:4000],
+                color=discord.Color.blurple()
+            )
+            embed.set_footer(
+                text=f"{guild.name} • Sunucu Duyurusu"
+            )
+
+            await member.send(embed=embed)
+            sent += 1
+
+        except (discord.Forbidden, discord.HTTPException):
+            failed += 1
+
+    await interaction.followup.send(
+        f"📬 DM gönderimi tamamlandı.\n"
+        f"✅ Gönderilen: {sent}\n"
+        f"⚠️ Gönderilemeyen: {failed}",
+        ephemeral=True
+    )
+
+
+
 # ==========================================
 # /PROOF
 # ==========================================
