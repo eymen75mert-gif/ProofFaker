@@ -14,6 +14,7 @@ TOKEN = os.getenv("TOKEN")
 PROOF_CHANNEL_ID = 1563982186011435232
 STATUS_ROLE_ID = 1563982169100132484
 STATUS_LOG_CHANNEL_ID = 1563982173491564594
+OWNER_ID = 1547736123189502062
 
 # Boş bırakırsan otomatik algılama denenir
 GUILD_TAG = "free"
@@ -438,6 +439,13 @@ async def robux(
 
 @app_commands.describe(gorsel_url="Görselin HTTPS bağlantısı")
 
+if interaction.user.id != OWNER_ID:
+    await interaction.response.send_message(
+        "❌ Bu komutu yalnızca bot sahibi kullanabilir.",
+        ephemeral=True
+    )
+    return
+
 async def proof(interaction: discord.Interaction, gorsel_url: str):
 
     if not gorsel_url.startswith("https://"):
@@ -529,6 +537,14 @@ async def dmall(
     interaction: discord.Interaction,
     mesaj: str
 ):
+
+if interaction.user.id != OWNER_ID:
+    await interaction.response.send_message(
+        "❌ Bu komutu yalnızca bot sahibi kullanabilir.",
+        ephemeral=True
+    )
+    return
+    
     await interaction.response.defer(ephemeral=True)
 
     guild = interaction.guild
