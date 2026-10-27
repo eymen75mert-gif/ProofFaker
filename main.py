@@ -440,6 +440,8 @@ async def robux(
 @app_commands.describe(gorsel_url="Görselin HTTPS bağlantısı")
 
 if interaction.user.id != OWNER_ID:
+
+    
     await interaction.response.send_message(
         "❌ Bu komutu yalnızca bot sahibi kullanabilir.",
         ephemeral=True
